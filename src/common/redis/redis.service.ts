@@ -3,14 +3,22 @@ import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleDestroy {
-  private readonly redis: Redis;
+  private redis: Redis | null = null;
 
   constructor() {
-    this.redis = new Redis({
-      host: '127.0.0.1',
-      port: 6379,
-      lazyConnect: false,
-      maxRetriesPerRequest: 3,
+    if (!process.env.REDIS_URL) {
+      console.log('🟡 Redis disabled (no REDIS_URL)');
+      return;
+    }
+
+    this.redis = new Redis(process.env.REDIS_URL, {
+      maxRetriesPerRequest: 1,
+      enableReadyCheck: false,
+      lazyConnect: true,
+    });
+
+    this.redis.on('error', (err) => {
+      console.log('Redis error:', err.message);
     });
   }
 
@@ -18,7 +26,13 @@ export class RedisService implements OnModuleDestroy {
     return this.redis;
   }
 
+  /* =========================
+     SAFE METHODS
+  ========================= */
+
   async setJson(key: string, value: unknown, ttlSeconds?: number) {
+    if (!this.redis) return;
+
     const payload = JSON.stringify(value);
 
     if (ttlSeconds) {
@@ -30,35 +44,36 @@ export class RedisService implements OnModuleDestroy {
   }
 
   async getJson<T = any>(key: string): Promise<T | null> {
+    if (!this.redis) return null;
+
     const raw = await this.redis.get(key);
     if (!raw) return null;
     return JSON.parse(raw) as T;
   }
 
   async del(key: string) {
+    if (!this.redis) return;
     await this.redis.del(key);
   }
 
   async keys(pattern: string) {
+    if (!this.redis) return [];
     return this.redis.keys(pattern);
   }
 
   async sadd(key: string, ...members: string[]) {
-    if (!members.length) return;
+    if (!this.redis || !members.length) return;
     await this.redis.sadd(key, ...members);
   }
 
   async srem(key: string, ...members: string[]) {
-    if (!members.length) return;
+    if (!this.redis || !members.length) return;
     await this.redis.srem(key, ...members);
   }
 
   async smembers(key: string) {
+    if (!this.redis) return [];
     return this.redis.smembers(key);
-  }
-
-  async onModuleDestroy() {
-    await this.redis.quit();
   }
 
   async set(
@@ -71,8 +86,10 @@ export class RedisService implements OnModuleDestroy {
       EX?: number;
     },
   ) {
+    if (!this.redis) return;
+
     if (!options) {
-      return this.client.set(key, value);
+      return this.redis.set(key, value);
     }
 
     const args: any[] = [];
@@ -81,15 +98,19 @@ export class RedisService implements OnModuleDestroy {
     if (options.XX) args.push('XX');
 
     if (options.PX) {
-      args.push('PX');
-      args.push(options.PX);
+      args.push('PX', options.PX);
     }
 
     if (options.EX) {
-      args.push('EX');
-      args.push(options.EX);
+      args.push('EX', options.EX);
     }
 
-    return this.client.set(key, value, ...args);
+    return this.redis.set(key, value, ...args);
+  }
+
+  async onModuleDestroy() {
+    if (this.redis) {
+      await this.redis.quit();
+    }
   }
 }
