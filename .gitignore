@@ -1,0 +1,30 @@
+# build
+/dist
+/build
+
+# dependencies
+/node_modules
+
+# env
+.env*
+!.env.example
+
+# logs
+logs
+*.log
+
+# OS
+.DS_Store
+
+# test
+/coverage
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+
+# prisma
+/generated
+/prisma/generated
+prisma/*.db
+prisma/*.db-journal

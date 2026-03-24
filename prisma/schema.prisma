@@ -1,0 +1,322 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String       @id @default(uuid())
+  email       String       @unique
+  password    String
+  role        UserRole     @default(USER)
+  status      UserStatus   @default(ACTIVE)
+  createdAt   DateTime     @default(now())
+  username    String       @unique
+  roomsOwned  Room[]
+  roomPlayers RoomPlayer[]
+  wallet      Wallet?
+  withdrawals WithdrawRequest[]
+
+  deposits DepositRequest[]
+}
+
+model Wallet {
+  id          String        @id @default(uuid())
+  userId      String        @unique
+  createdAt   DateTime      @default(now())
+  holds       Hold[]
+  ledgers     LedgerEntry[]
+  roomPlayers RoomPlayer[]
+  user        User          @relation(fields: [userId], references: [id])
+  balance Decimal @default(0)
+  deposits DepositRequest[]
+  @@index([userId])
+  withdrawals WithdrawRequest[]
+
+}
+
+model LedgerEntry {
+  id        String        @id @default(uuid())
+  walletId  String
+  type      LedgerType
+  amount    Decimal
+  refId     String
+  createdAt DateTime      @default(now())
+  refType   LedgerRefType
+  wallet    Wallet        @relation(fields: [walletId], references: [id])
+
+  @@unique([walletId, type, refType, refId])
+  @@index([walletId, createdAt])
+  @@index([refType, refId])
+}
+
+model Hold {
+  id        String     @id @default(uuid())
+  walletId  String
+  roomId    String
+  amount    Decimal
+  createdAt DateTime   @default(now())
+  status    HoldStatus @default(ACTIVE)
+  wallet    Wallet     @relation(fields: [walletId], references: [id])
+
+  @@index([walletId, status])
+  @@index([roomId, status])
+}
+
+model Room {
+  id             String          @id @default(uuid())
+  gameType       GameType
+  stake          Decimal
+  status         RoomStatus      @default(WAITING)
+  createdAt      DateTime        @default(now())
+  mode           GameMode
+  finishedAt     DateTime?
+  maxPlayers     Int             @default(4)
+  okey101Scoring Okey101Scoring?
+  ownerId        String?
+  startedAt      DateTime?
+  owner          User?           @relation(fields: [ownerId], references: [id])
+  players        RoomPlayer[]
+  okey101ScoringMode String?
+  okey101MaxRounds Int?
+  @@index([gameType, stake, status])
+  @@index([status, createdAt])
+}
+
+model GameReplayLog {
+  id         String   @id @default(uuid())
+  roomId      String
+  gameType    String
+  userId      String?
+  seat        Int?
+  eventType   String
+  actionType  String?
+  phase       String?
+  turnIndex   Int?
+  payload     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([roomId, createdAt])
+  @@index([roomId, eventType])
+}
+
+model RoomPlayer {
+  roomId         String
+  userId         String
+  walletId       String
+  joinedAt       DateTime  @default(now())
+  disconnectedAt DateTime?
+  lastSeenAt     DateTime?
+  createdAt      DateTime  @default(now())
+  room           Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user           User      @relation(fields: [userId], references: [id])
+  wallet         Wallet    @relation(fields: [walletId], references: [id])
+
+  @@id([roomId, userId])
+  @@index([userId])
+  @@index([roomId])
+  @@index([walletId])
+  @@index([roomId, disconnectedAt])
+}
+
+model FraudCase {
+  id              String   @id @default(uuid())
+  roomId           String?
+  gameType         String?
+  primaryUserId    String?
+  secondaryUserId  String?
+  riskScore        Int
+  severity         String
+  ruleCode         String
+  reason           String
+  payload          Json?
+  status           String   @default("OPEN")
+  createdAt        DateTime @default(now())
+
+  @@index([primaryUserId, createdAt])
+  @@index([secondaryUserId, createdAt])
+  @@index([roomId, createdAt])
+  @@index([severity, createdAt])
+}
+
+model PlayerRiskProfile {
+  id                    String   @id @default(uuid())
+  userId                String   @unique
+  totalRiskScore        Int      @default(0)
+  fraudCaseCount        Int      @default(0)
+  suspiciousRoomCount   Int      @default(0)
+  collusionScore        Int      @default(0)
+  botScore              Int      @default(0)
+  dumpingScore          Int      @default(0)
+  timingScore           Int      @default(0)
+  lastFraudAt           DateTime?
+  updatedAt             DateTime @updatedAt
+  createdAt             DateTime @default(now())
+}
+
+model FraudSignal {
+  id            String   @id @default(uuid())
+  roomId         String?
+  gameType       String?
+  userId         String?
+  relatedUserId  String?
+  signalType     String
+  signalValue    Float
+  severity       String
+  payload        Json?
+  createdAt      DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([relatedUserId, createdAt])
+  @@index([roomId, createdAt])
+  @@index([signalType, createdAt])
+}
+
+model RiskActionLog {
+  id          String   @id @default(uuid())
+  userId      String
+  actionType  String
+  riskScore   Int
+  reason      String
+  payload     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([actionType, createdAt])
+}
+
+
+model DepositRequest {
+  id        String   @id @default(uuid())
+  userId    String
+  walletId  String
+  amount    Decimal
+  method    String
+  status    DepositStatus @default(PENDING)
+  bankReference String?
+  approvedBy String?
+  approvedAt DateTime?
+
+  rejectedBy String?
+  rejectedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  wallet Wallet @relation(fields: [walletId], references: [id])
+}
+
+model WithdrawRequest {
+  id               String         @id @default(uuid())
+  userId           String
+  walletId         String
+  amount           Decimal
+  method           String
+  accountInfo      Json?
+  status           WithdrawStatus @default(PENDING)
+
+  amlRiskScore     Int            @default(0)
+  amlReason        String?
+
+  approvedBy       String?
+  approvedAt       DateTime?
+
+  rejectedBy       String?
+  rejectedAt       DateTime?
+  rejectReason     String?
+
+  paidAt           DateTime?
+  payoutReference  String?
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  user             User           @relation(fields: [userId], references: [id])
+  wallet           Wallet         @relation(fields: [walletId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([walletId, createdAt])
+  @@index([status, createdAt])
+}
+
+enum WithdrawStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  PAID
+  CANCELED
+}
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum DepositStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum UserStatus {
+ ACTIVE
+  FLAGGED
+  UNDER_REVIEW
+  FROZEN
+  BANNED
+}
+
+enum Okey101Scoring {
+  KATLAMALI
+  KATLAMASIZ
+}
+
+enum GameType {
+  TAVLA
+  OKEY
+  BATAK
+  OKEY101
+  PISTI
+  BLACKJACK
+  SPADES
+  TEXAS_POKER
+}
+
+enum GameMode {
+  SOLO
+  TEAM
+}
+
+enum RoomStatus {
+  WAITING
+  PLAYING
+  FINISHED
+  CANCELED
+}
+
+enum LedgerType {
+  DEPOSIT
+  WITHDRAW
+  STAKE_HOLD
+  STAKE_RELEASE
+  WIN
+  LOSS
+  FEE
+}
+
+enum LedgerRefType {
+  DEPOSIT
+  WITHDRAW
+  ROOM
+  GAME
+  ADMIN
+}
+
+enum HoldStatus {
+  ACTIVE
+  RELEASED
+  CONSUMED
+}
